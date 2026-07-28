@@ -247,7 +247,7 @@ td{color:var(--mist);}
 
   <button class="btn" id="btn-save">결과 이미지로 저장</button>
   <div id="img-box" class="card hide" style="margin-top:16px;">
-    <p class="small" style="margin:0 0 12px;">아래 이미지를 <b>길게 눌러</b> 사진에 저장하세요. PC에서는 아래 버튼으로 내려받을 수 있습니다.</p>
+    <p class="small" style="margin:0 0 12px;">공유 창이 뜨면 <b>이미지 저장</b>을 선택하세요. 창이 뜨지 않으면 아래 이미지를 <b>길게 눌러</b> 저장하거나, PC에서는 아래 버튼으로 내려받으세요.</p>
     <img id="img-out" alt="진단 결과 이미지" style="width:100%;border-radius:12px;display:block;">
     <a id="img-link" class="btn" style="text-align:center;text-decoration:none;display:block;">파일로 내려받기</a>
   </div>
@@ -755,16 +755,33 @@ function buildShot(cat, order, spread, top, bottom, lowest, avgAll){
 
 $('btn-save').onclick = function(){
   const btn = $('btn-save');
+  btn.disabled = true;
   btn.textContent = '이미지 만드는 중...';
   html2canvas($('shot'), {scale:2, backgroundColor:'#101636', logging:false}).then(function(c){
-    const url = c.toDataURL('image/png');
-    $('img-out').src = url;
-    $('img-link').href = url;
-    $('img-link').download = '코칭커뮤니케이션_' + nickname + '.png';
-    $('img-box').classList.remove('hide');
-    btn.textContent = '결과 이미지로 저장';
-    $('img-box').scrollIntoView({behavior:'smooth', block:'start'});
-  }).catch(function(){ btn.textContent = '이미지를 만들지 못했습니다. 다시 시도해 주세요.'; });
+    c.toBlob(function(blob){
+      btn.disabled = false;
+      btn.textContent = '결과 이미지로 저장';
+      if(!blob){ btn.textContent = '이미지를 만들지 못했습니다.'; return; }
+
+      const fname = '코칭커뮤니케이션_' + nickname + '.png';
+      const file = new File([blob], fname, {type:'image/png'});
+      const url = URL.createObjectURL(blob);
+
+      $('img-out').src = url;
+      $('img-link').href = url;
+      $('img-link').download = fname;
+      $('img-box').classList.remove('hide');
+
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        navigator.share({files:[file]}).catch(function(){});
+      } else {
+        $('img-box').scrollIntoView({behavior:'smooth', block:'start'});
+      }
+    }, 'image/png');
+  }).catch(function(){
+    btn.disabled = false;
+    btn.textContent = '이미지를 만들지 못했습니다. 다시 시도해 주세요.';
+  });
 };
 
 $('btn-again').onclick = ()=>{ location.reload(); };
@@ -831,46 +848,78 @@ function renderChips(){
     if(!list || !list.length){ box.textContent = '등록된 코드가 없습니다.'; return; }
     box.innerHTML = '';
     list.slice().reverse().forEach(function(c){
-      const b = document.createElement('button');
-      b.className = 'chip'; b.textContent = c;
+      const wrap = document.createElement('span');
+      wrap.className = 'chip';
+      const b = document.createElement('span');
+      b.textContent = c; b.style.cursor = 'pointer';
       b.onclick = function(){
         $('in-acode').value = c;
         Array.prototype.forEach.call(box.children, function(x){ x.classList.remove('on'); });
-        b.classList.add('on');
-        $('btn-load').click();
+        wrap.classList.add('on');
+        loadResults(c);
       };
-      box.appendChild(b);
+      const x = document.createElement('span');
+      x.textContent = '×';
+      x.style.cssText = 'margin-left:9px;opacity:.55;cursor:pointer;font-size:15px;';
+      x.onclick = function(ev){
+        ev.stopPropagation();
+        if(!confirm(c + ' 코드를 삭제할까요? 이미 저장된 응답은 지워지지 않습니다.')) return;
+        fetch(GAS_URL + '?action=delcode&code=' + encodeURIComponent(c))
+          .then(function(r){ return r.json(); })
+          .then(function(){ renderChips(); });
+      };
+      wrap.appendChild(b); wrap.appendChild(x);
+      box.appendChild(wrap);
     });
   });
 }
 
-$('btn-load').onclick = ()=>{
-  const c = $('in-acode').value.trim().toUpperCase();
+$('btn-load').onclick = function(){ loadResults($('in-acode').value.trim().toUpperCase()); };
+
+function loadResults(c){
   if(!c) return;
   const box = $('admin-result');
   box.innerHTML = '<p class="small" style="margin:0;">불러오는 중...</p>';
   fetch(GAS_URL + '?action=results&code=' + encodeURIComponent(c))
-    .then(r=>r.json())
-    .then(rows=>{
+    .then(function(r){ return r.json(); })
+    .then(function(rows){
       if(!rows || !rows.length){ box.innerHTML = '<p class="small" style="margin:0;">해당 코드의 결과가 없습니다.</p>'; return; }
       const keys = ['listen','ask','recognize','feedback','delegate'];
-      const avg = {}; keys.forEach(k=>avg[k]=0);
-      rows.forEach(r=>keys.forEach(k=>avg[k]+=Number(r[k]||0)));
+      const avg = {}; keys.forEach(function(k){ avg[k]=0; });
+      rows.forEach(function(r){ keys.forEach(function(k){ avg[k]+=Number(r[k]||0); }); });
+
       let h = '<h2 style="margin-bottom:14px;">'+c+' · '+rows.length+'명</h2><table><tr><th>닉네임</th>';
-      keys.forEach(k=>h+='<th>'+CATS[k].name+'</th>');
-      h += '</tr>';
-      rows.forEach(r=>{
+      keys.forEach(function(k){ h+='<th>'+CATS[k].name+'</th>'; });
+      h += '<th></th></tr>';
+      rows.forEach(function(r){
         h += '<tr><td>'+r.nickname+'</td>';
-        keys.forEach(k=>h+='<td>'+r[k]+'</td>');
-        h += '</tr>';
+        keys.forEach(function(k){ h+='<td>'+r[k]+'</td>'; });
+        h += '<td><button class="chip" style="padding:3px 9px;font-size:11px;margin:0;" data-row="'+r.row+'">삭제</button></td></tr>';
       });
       h += '<tr><td style="color:#8B7FF0;font-weight:600;">평균</td>';
-      keys.forEach(k=>h+='<td style="color:#8B7FF0;font-weight:600;">'+(avg[k]/rows.length).toFixed(1)+'</td>');
-      h += '</tr></table>';
+      keys.forEach(function(k){ h+='<td style="color:#8B7FF0;font-weight:600;">'+(avg[k]/rows.length).toFixed(1)+'</td>'; });
+      h += '<td></td></tr></table>';
+      h += '<button class="btn ghost" id="btn-delall" style="margin-top:16px;">이 코드의 응답 전체 삭제</button>';
       box.innerHTML = h;
+
+      Array.prototype.forEach.call(box.querySelectorAll('button[data-row]'), function(b){
+        b.onclick = function(){
+          if(!confirm('이 응답을 삭제할까요? 되돌릴 수 없습니다.')) return;
+          b.textContent = '...';
+          fetch(GAS_URL + '?action=delrow&row=' + b.getAttribute('data-row'))
+            .then(function(r){ return r.json(); })
+            .then(function(){ loadResults(c); });
+        };
+      });
+      $('btn-delall').onclick = function(){
+        if(!confirm(c + ' 코드의 응답을 모두 삭제할까요? 되돌릴 수 없습니다.')) return;
+        fetch(GAS_URL + '?action=delresults&code=' + encodeURIComponent(c))
+          .then(function(r){ return r.json(); })
+          .then(function(){ loadResults(c); });
+      };
     })
-    .catch(()=>{ box.innerHTML = '<p class="small" style="margin:0;">불러오지 못했습니다. Apps Script 주소를 확인해 주세요.</p>'; });
-};
+    .catch(function(){ box.innerHTML = '<p class="small" style="margin:0;">불러오지 못했습니다. Apps Script 주소를 확인해 주세요.</p>'; });
+}
 </script>
 </body>
 </html>
