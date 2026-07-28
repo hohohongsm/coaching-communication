@@ -180,6 +180,12 @@ table{width:100%;border-collapse:collapse;font-size:12.5px;}
 th,td{padding:9px 6px;text-align:left;border-bottom:1px solid rgba(255,255,255,.08);}
 th{color:var(--violet-soft);font-weight:600;font-size:11px;letter-spacing:.08em;}
 td{color:var(--mist);}
+.chip{
+  display:inline-block;padding:7px 13px;margin:0 6px 6px 0;border-radius:20px;
+  border:1px solid var(--line);background:rgba(255,255,255,.05);
+  color:var(--mist);font-size:13px;cursor:pointer;font-family:inherit;
+}
+.chip.on{background:rgba(108,92,231,.28);border-color:var(--violet-soft);color:#fff;}
 .adminlink{
   text-align:center;margin-top:26px;font-size:12px;
   color:rgba(201,206,232,.35);cursor:pointer;
@@ -215,7 +221,6 @@ td{color:var(--mist);}
   <div class="progress-txt" id="ptxt">1 / 25</div>
 
   <div class="card">
-    <div class="q-cat" id="q-cat">경청</div>
     <div class="q-text" id="q-text"></div>
     <div class="opts" id="q-opts"></div>
   </div>
@@ -229,7 +234,6 @@ td{color:var(--mist);}
 
 <!-- ========== 3. 결과 ========== -->
 <section id="s-result" class="hide">
-  <div class="eyebrow">Result</div>
   <h1 id="res-title" style="font-size:24px;"></h1>
 
   <div class="glass">
@@ -255,7 +259,6 @@ td{color:var(--mist);}
 
 <!-- ========== 4. 관리자 ========== -->
 <section id="s-admin" class="hide">
-  <div class="eyebrow">Facilitator</div>
   <h1 style="font-size:22px;">진행자 페이지</h1>
 
   <div class="card" id="admin-login">
@@ -274,6 +277,7 @@ td{color:var(--mist);}
 
     <div class="card">
       <label>결과 조회</label>
+      <div id="code-chips" class="small" style="margin-bottom:12px;">등록된 코드를 불러오는 중...</div>
       <input id="in-acode" type="text" placeholder="조회할 코드" autocomplete="off">
       <button class="btn" id="btn-load" style="margin-top:8px;">결과 불러오기</button>
     </div>
@@ -473,7 +477,10 @@ const F = {
   }
 };
 
-const MSG_EVEN = '다섯 영역을 비슷한 정도로 활용하고 있습니다. 상황에 따라 대화 방식을 조절하고 있다는 뜻일 수 있습니다. 다만 점수가 고르다는 것만으로 모든 방식을 충분히 활용하고 있다고 보기는 어렵습니다. 최근 대화를 떠올려보며, 상황에 맞게 선택한 것이었는지 아니면 필요한 순간에 놓친 것이었는지 나누어 살펴보시면 좋겠습니다.';
+const MSG_EVEN_LOW = '다섯 영역이 모두 비슷한 정도로 나타났고, 전반적으로 아직 자주 쓰이지는 않고 있습니다. 업무가 바쁘거나 대화를 나눌 여유가 적었을 수 있습니다. 다만 어느 한 영역이 아니라 전체가 비슷하다면, 특정 상황을 골라 조절한 결과라기보다 이런 대화를 나눌 기회 자체가 적었을 가능성이 큽니다. 다섯 가지 중 지금 가장 필요하다고 느껴지는 하나를 골라, 다음 대화에서 한 번 시도해보시면 좋겠습니다.';
+const MSG_EVEN_MID = '다섯 영역을 비슷한 정도로 활용하고 있습니다. 상황에 따라 대화 방식을 조절하고 있다는 뜻일 수 있습니다. 다만 점수가 고르다는 것만으로 모든 방식을 충분히 활용하고 있다고 보기는 어렵습니다. 최근 대화를 떠올려보며, 상황에 맞게 선택한 것이었는지 아니면 필요한 순간에 놓친 것이었는지 나누어 살펴보시면 좋겠습니다.';
+const MSG_EVEN_HIGH = '다섯 영역을 모두 고르게, 자주 활용하고 있습니다. 어느 한 방식에 치우치지 않고 대화를 이어가고 있다는 뜻입니다. 다만 자주 한다는 것과 상황에 맞게 한다는 것은 다릅니다. 최근 대화를 떠올려보며, 그 순간에 정말 필요한 방식을 골랐는지 살펴보시면 좋겠습니다.';
+const MSG_LOW_LEAD = '전반적으로 다섯 가지 대화 행동이 아직 자주 나타나지는 않습니다. 아래 내용은 그 안에서 상대적으로 자주 쓰는 방식과 덜 쓰는 방식을 비교한 것입니다.';
 const MSG_FEVEN = '이 영역의 세 가지 행동을 비슷한 정도로 활용하고 있습니다. 상황에 따라 조절한 것인지, 필요했는데 지나친 것인지는 본인만 알 수 있습니다. 아래 질문에 스스로 답해보시면 좋겠습니다.';
 
 /* =======================================================
@@ -495,33 +502,43 @@ const show = id => {
 /* =======================================================
    진단 진행
 ======================================================= */
-function loadCodes(){
-  fetch(GAS_URL + '?action=codes')
+function fetchCodes(){
+  return fetch(GAS_URL + '?action=codes')
     .then(function(r){ return r.json(); })
-    .then(function(list){ VALID_CODES = list.map(function(x){ return String(x).toUpperCase(); }); })
-    .catch(function(){ VALID_CODES = null; });
+    .then(function(list){
+      VALID_CODES = list.map(function(x){ return String(x).trim().toUpperCase(); });
+      return VALID_CODES;
+    })
+    .catch(function(){ VALID_CODES = null; return null; });
 }
-loadCodes();
+function loadCodes(){ return fetchCodes(); }
 
 $('btn-start').onclick = function(){
   nickname = $('in-nick').value.trim();
   code = $('in-code').value.trim().toUpperCase();
   const err = $('code-err');
+  const btn = $('btn-start');
   err.classList.add('hide');
   if(!nickname){ $('in-nick').focus(); return; }
   if(!code){ $('in-code').focus(); return; }
-  if(VALID_CODES && VALID_CODES.indexOf(code) === -1){
-    err.textContent = '등록되지 않은 진단코드입니다. 진행자에게 확인해 주세요.';
-    err.classList.remove('hide');
-    return;
-  }
-  idx = 0; answers.fill(0);
-  show('s-quiz'); render();
+
+  btn.disabled = true;
+  btn.textContent = '확인 중...';
+  fetchCodes().then(function(list){
+    btn.disabled = false;
+    btn.textContent = '진단 시작하기';
+    if(list && list.indexOf(code) === -1){
+      err.textContent = '등록되지 않은 진단코드입니다. 진행자에게 확인해 주세요.';
+      err.classList.remove('hide');
+      return;
+    }
+    idx = 0; answers.fill(0);
+    show('s-quiz'); render();
+  });
 };
 
 function render(){
-  const [catKey, text] = QUESTIONS[idx];
-  $('q-cat').textContent = CATS[catKey].name;
+  const text = QUESTIONS[idx][1];
   $('q-text').textContent = text;
   $('ptxt').textContent = (idx+1) + ' / 25';
   $('pfill').style.width = ((idx+1)/25*100) + '%';
@@ -587,6 +604,8 @@ function finish(){
   const { cat, fac } = score();
   const order = Object.keys(cat).sort((a,b)=>cat[b]-cat[a]);
   const spread = cat[order[0]] - cat[order[4]];
+  const total = order.reduce(function(t,k){ return t + cat[k]; }, 0);
+  const avgAll = total / 25;
 
   $('res-title').textContent = nickname + ' 님의 대화 방식';
 
@@ -603,32 +622,55 @@ function finish(){
   /* 본문 */
   let html = '';
   if(spread < 5){
-    html += '<div class="glass"><div class="res-tag">고르게 활용하는 대화</div>'
-         +  '<div class="res-body">'+MSG_EVEN+'</div></div>';
+    let tag, body;
+    if(avgAll < 3){ tag = '전반적으로 살펴볼 점'; body = MSG_EVEN_LOW; }
+    else if(avgAll < 4){ tag = '고르게 활용하는 대화'; body = MSG_EVEN_MID; }
+    else { tag = '고르게 활용하는 대화'; body = MSG_EVEN_HIGH; }
+    html += '<div class="glass"><div class="res-tag">'+tag+'</div>'
+         +  '<div class="res-body">'+body+'</div></div>';
   } else {
+    if(avgAll < 3){
+      html += '<div class="glass"><div class="res-tag">전반적으로 살펴볼 점</div>'
+           +  '<div class="res-body">'+MSG_LOW_LEAD+'</div></div>';
+    }
     html += block('자주 활용하는 대화', top, fac, 'high');
     html += block('더 활용해 볼 대화', bottom, fac, 'low');
   }
   $('res-blocks').innerHTML = html;
 
-  /* 제안: 강화 + 보완 */
+  /* 제안 */
   let actHtml = '';
-  if(spread >= 5){
-    const hk = Object.keys(CATS[top].factors);
-    let hi = hk[0]; hk.forEach(k=>{ if(fac[k].avg > fac[hi].avg) hi = k; });
-    actHtml += '<div class="action"><div class="res-tag">강점을 더 살리려면</div>'
-      + '<div class="res-factor">' + CATS[top].name + ' · ' + CATS[top].factors[hi].name + '</div>'
-      + '<div class="res-body">' + F[hi].tip + '</div></div>';
-  }
   const lk = Object.keys(CATS[bottom].factors);
-  let lowest = lk[0]; lk.forEach(k=>{ if(fac[k].avg < fac[lowest].avg) lowest = k; });
-  actHtml += '<div class="action"><div class="res-tag">다음 대화에서 해볼 것</div>'
-    + '<div class="res-factor">' + CATS[bottom].name + ' · ' + CATS[bottom].factors[lowest].name + '</div>'
-    + '<div class="res-body">' + F[lowest].act + '</div></div>';
+  let lowest = lk[0]; lk.forEach(function(k){ if(fac[k].avg < fac[lowest].avg) lowest = k; });
+
+  if(spread >= 5){
+    if(avgAll >= 3){
+      const hk = Object.keys(CATS[top].factors);
+      let hi = hk[0]; hk.forEach(function(k){ if(fac[k].avg > fac[hi].avg) hi = k; });
+      actHtml += '<div class="action"><div class="res-tag">강점을 더 살리려면</div>'
+        + '<div class="res-factor">' + CATS[top].name + ' · ' + CATS[top].factors[hi].name + '</div>'
+        + '<div class="res-body">' + F[hi].tip + '</div></div>';
+    }
+    actHtml += '<div class="action"><div class="res-tag">다음 대화에서 해볼 것</div>'
+      + '<div class="res-factor">' + CATS[bottom].name + ' · ' + CATS[bottom].factors[lowest].name + '</div>'
+      + '<div class="res-body">' + F[lowest].act + '</div></div>';
+  } else {
+    let rows = '';
+    order.forEach(function(ck){
+      const fks = Object.keys(CATS[ck].factors);
+      let lo = fks[0]; fks.forEach(function(k){ if(fac[k].avg < fac[lo].avg) lo = k; });
+      rows += '<div style="margin-bottom:14px;">'
+           +  '<div class="res-factor" style="margin-bottom:3px;">' + CATS[ck].name + ' · ' + CATS[ck].factors[lo].name + '</div>'
+           +  '<div class="res-body">' + F[lo].act + '</div></div>';
+    });
+    actHtml += '<div class="action"><div class="res-tag">이 중 하나를 골라 시도해보세요</div>'
+      + '<div class="res-body" style="margin-bottom:14px;">다섯 영역의 점수 차이가 크지 않아 한 가지를 정해 제안하지 않았습니다. 지금 가장 필요하다고 느껴지는 것을 골라보세요.</div>'
+      + rows + '</div>';
+  }
   $('res-action').innerHTML = actHtml;
 
   for(const k in fac) FACAVG[k] = fac[k].avg;
-  buildShot(cat, order, spread, top, bottom, lowest);
+  buildShot(cat, order, spread, top, bottom, lowest, avgAll);
   save(cat);
   show('s-result');
 }
@@ -657,7 +699,7 @@ function block(tag, catKey, fac, mode){
 /* =======================================================
    PNG
 ======================================================= */
-function buildShot(cat, order, spread, top, bottom, lowest){
+function buildShot(cat, order, spread, top, bottom, lowest, avgAll){
   const bars = order.map(k=>{
     const hi = (spread>=5 && (k===top||k===bottom));
     return '<div class="bar-row"><div class="bar-label">'+CATS[k].name+'</div>'
@@ -667,7 +709,11 @@ function buildShot(cat, order, spread, top, bottom, lowest){
 
   let body = '';
   if(spread < 5){
-    body = '<div class="sc"><div class="res-tag">고르게 활용하는 대화</div><div class="res-body">'+MSG_EVEN+'</div></div>';
+    var tg, bd;
+    if(avgAll < 3){ tg = '전반적으로 살펴볼 점'; bd = MSG_EVEN_LOW; }
+    else if(avgAll < 4){ tg = '고르게 활용하는 대화'; bd = MSG_EVEN_MID; }
+    else { tg = '고르게 활용하는 대화'; bd = MSG_EVEN_HIGH; }
+    body = '<div class="sc"><div class="res-tag">'+tg+'</div><div class="res-body">'+bd+'</div></div>';
   } else {
     [['자주 활용하는 대화',top],['더 활용해 볼 대화',bottom]].forEach(function(pair){
       body += '<div class="sc"><div class="res-tag">'+pair[0]+'</div>'
@@ -676,9 +722,26 @@ function buildShot(cat, order, spread, top, bottom, lowest){
     });
     const hk = Object.keys(CATS[top].factors);
     let hi = hk[0]; hk.forEach(function(k){ if(FACAVG[k] > FACAVG[hi]) hi = k; });
-    body += '<div class="sc act"><div class="res-tag">강점을 더 살리려면</div>'
+    if(avgAll >= 3) body += '<div class="sc act"><div class="res-tag">강점을 더 살리려면</div>'
          +  '<div class="res-factor">'+CATS[top].name+' · '+CATS[top].factors[hi].name+'</div>'
          +  '<div class="res-body">'+F[hi].tip+'</div></div>';
+  }
+
+  let actShot = '';
+  if(spread >= 5){
+    actShot = '<div class="sc act"><div class="res-tag">다음 대화에서 해볼 것</div>'
+      + '<div class="res-factor">'+CATS[bottom].name+' · '+CATS[bottom].factors[lowest].name+'</div>'
+      + '<div class="res-body">'+F[lowest].act+'</div></div>';
+  } else {
+    let rows = '';
+    order.forEach(function(ck){
+      const fks = Object.keys(CATS[ck].factors);
+      let lo = fks[0]; fks.forEach(function(k){ if(FACAVG[k] < FACAVG[lo]) lo = k; });
+      rows += '<div style="margin-bottom:14px;"><div class="res-factor" style="margin-bottom:3px;">'
+           +  CATS[ck].name+' · '+CATS[ck].factors[lo].name+'</div>'
+           +  '<div class="res-body">'+F[lo].act+'</div></div>';
+    });
+    actShot = '<div class="sc act"><div class="res-tag">이 중 하나를 골라 시도해보세요</div>'+rows+'</div>';
   }
 
   $('shot').innerHTML =
@@ -686,9 +749,7 @@ function buildShot(cat, order, spread, top, bottom, lowest){
     + '<p class="small" style="margin-bottom:22px;">리더의 코칭 커뮤니케이션 행동 진단</p>'
     + '<div class="sc">'+bars+'</div>'
     + body
-    + '<div class="sc act"><div class="res-tag">다음 대화에서 해볼 것</div>'
-    + '<div class="res-factor">'+CATS[bottom].name+' · '+CATS[bottom].factors[lowest].name+'</div>'
-    + '<div class="res-body">'+F[lowest].act+'</div></div>'
+    + actShot
     + '<p class="foot">코칭형 대화는 늘 질문만 하거나 구성원에게 답을 맡기는 것이 아닙니다. 업무의 긴급성과 구성원의 준비 수준에 따라 지시·설명·협의·위임을 다르게 쓸 수 있습니다. 이 진단은 그중 한 가지 대화 방식을 살펴본 것입니다.<br><br>이 결과는 스스로 응답한 내용을 바탕으로 하므로, 구성원이 실제로 경험한 것과는 다를 수 있습니다. 점수의 높고 낮음은 역량의 우열이 아니라, 지금 자주 쓰는 방식과 덜 쓰는 방식의 차이를 보여줍니다.</p>';
 }
 
@@ -729,6 +790,7 @@ $('btn-login').onclick = ()=>{
   if($('in-pw').value === ADMIN_PW){
     $('admin-login').classList.add('hide');
     $('admin-body').classList.remove('hide');
+    renderChips();
   } else {
     $('in-pw').value = '';
     $('in-pw').placeholder = '비밀번호가 맞지 않습니다';
@@ -744,20 +806,43 @@ $('btn-addcode').onclick = function(){
   }
   msg.style.color = 'rgba(201,206,232,.72)';
   msg.textContent = '등록하는 중...';
-  fetch(GAS_URL, {
-    method:'POST', mode:'no-cors',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify({ action:'addcode', code:c })
-  }).then(function(){
-    msg.style.color = '#9CE8C0';
-    msg.textContent = c + ' 코드가 등록되었습니다. 참가자에게 안내해 주세요.';
-    $('in-acode').value = c;
-    loadCodes();
-  }).catch(function(){
-    msg.style.color = '#FF9C9C';
-    msg.textContent = '등록하지 못했습니다. 연결을 확인해 주세요.';
-  });
+  fetch(GAS_URL + '?action=addcode&code=' + encodeURIComponent(c))
+    .then(function(r){ return r.json(); })
+    .then(function(res){
+      if(res && res.ok){
+        msg.style.color = '#9CE8C0';
+        msg.textContent = c + ' 코드가 등록되었습니다. 참가자에게 안내해 주세요.';
+        $('in-acode').value = c;
+        renderChips();
+      } else {
+        msg.style.color = '#FF9C9C';
+        msg.textContent = '등록하지 못했습니다. Apps Script 배포를 확인해 주세요.';
+      }
+    })
+    .catch(function(){
+      msg.style.color = '#FF9C9C';
+      msg.textContent = '연결하지 못했습니다. Apps Script 주소와 배포 설정을 확인해 주세요.';
+    });
 };
+
+function renderChips(){
+  const box = $('code-chips');
+  fetchCodes().then(function(list){
+    if(!list || !list.length){ box.textContent = '등록된 코드가 없습니다.'; return; }
+    box.innerHTML = '';
+    list.slice().reverse().forEach(function(c){
+      const b = document.createElement('button');
+      b.className = 'chip'; b.textContent = c;
+      b.onclick = function(){
+        $('in-acode').value = c;
+        Array.prototype.forEach.call(box.children, function(x){ x.classList.remove('on'); });
+        b.classList.add('on');
+        $('btn-load').click();
+      };
+      box.appendChild(b);
+    });
+  });
+}
 
 $('btn-load').onclick = ()=>{
   const c = $('in-acode').value.trim().toUpperCase();
